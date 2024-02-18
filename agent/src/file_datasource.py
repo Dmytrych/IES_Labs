@@ -38,6 +38,10 @@ class FileDatasource:
         self.accelerometer_file = open(self.accelerometer_filename, 'r')
         self.gps_file = open(self.gps_filename, 'r')
 
+        # Skipping the rows with column names
+        next(self.accelerometer_file)
+        next(self.gps_file)
+
     def stop_reading(self):
         if self.accelerometer_file:
             self.accelerometer_file.close()
