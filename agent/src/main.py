@@ -25,7 +25,7 @@ def connect_mqtt(broker, port):
 
 
 def publish(client, topic, datasource, delay):
-    datasource.startReading()
+    datasource.start_reading()
     while True:
         time.sleep(delay)
         data = datasource.read()
