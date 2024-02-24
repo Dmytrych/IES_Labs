@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Set, Dict, List, Any
+from typing import Set, Dict, List, Any, Union
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Body
 from sqlalchemy import (
     create_engine,
@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.sql import select
 from datetime import datetime
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, Field, parse_obj_as, ConfigDict
 from config import (
     POSTGRES_HOST,
     POSTGRES_PORT,
@@ -56,7 +56,9 @@ SessionLocal = sessionmaker(bind=engine)
 
 # SQLAlchemy model
 class ProcessedAgentDataInDB(BaseModel):
-    id: int = Field(default=None, allow_mutation=True)
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
     road_state: str
     user_id: int
     x: float
@@ -129,7 +131,7 @@ async def send_data_to_subscribers(user_id: int, data):
 
 
 def convert_agent_data(raw_data: ProcessedAgentData):
-    return ProcessedAgentDataInDB(
+    return ProcessedAgentDataDbModel(
         road_state=raw_data.road_state,
         user_id=raw_data.agent_data.user_id,
         x=raw_data.agent_data.accelerometer.x,
@@ -144,7 +146,7 @@ def convert_agent_data(raw_data: ProcessedAgentData):
 # FastAPI CRUDL endpoints
 
 
-@app.post("/processed_agent_data/")
+@app.post("/processed_agent_data/",)
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
     # Insert data to database
     # Send data to subscribers
@@ -152,9 +154,7 @@ async def create_processed_agent_data(data: List[ProcessedAgentData]):
         converted_data = []
 
         for dataItem in data:
-            converted_data.append(ProcessedAgentDataDbModel(**convert_agent_data(dataItem).dict()))
-
-        print(converted_data[0].latitude)
+            converted_data.append(convert_agent_data(dataItem))
 
         session.add_all(converted_data)
         session.commit()
@@ -164,12 +164,17 @@ async def create_processed_agent_data(data: List[ProcessedAgentData]):
 
 @app.get(
     "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
+    response_model=Union[ProcessedAgentDataInDB, None],
 )
 def read_processed_agent_data(processed_agent_data_id: int):
     # Get data by id
     with SessionLocal() as session:
-        return session.query(ProcessedAgentDataDbModel).get(processed_agent_data_id)
+        found_record = session.query(ProcessedAgentDataDbModel).get(processed_agent_data_id)
+
+        if found_record is None:
+            return None
+
+        return ProcessedAgentDataInDB.model_validate(found_record)
 
 
 @app.get("/processed_agent_data/", response_model=list[ProcessedAgentDataInDB])
@@ -191,15 +196,23 @@ async def update_processed_agent_data(processed_agent_data_id: int, data: Proces
         if updated_entry is None:
             return None
 
-        for key, value in convert_agent_data(data).model_dump():
-            setattr(updated_entry, key, value)
+        updated_converted_data = convert_agent_data(data)
+
+        updated_entry.road_state = updated_converted_data.road_state,
+        updated_entry.user_id = updated_converted_data.user_id,
+        updated_entry.x = updated_converted_data.x,
+        updated_entry.y = updated_converted_data.y,
+        updated_entry.z = updated_converted_data.z,
+        updated_entry.latitude = updated_converted_data.latitude,
+        updated_entry.longitude = updated_converted_data.longitude,
+        updated_entry.timestamp = updated_converted_data.timestamp,
 
         session.commit()
 
         for subscriber_id in subscriptions:
             await send_data_to_subscribers(subscriber_id, updated_entry)
 
-        return updated_entry
+        return ProcessedAgentDataInDB.model_validate(updated_entry)
 
 
 @app.delete(
@@ -209,8 +222,14 @@ async def update_processed_agent_data(processed_agent_data_id: int, data: Proces
 def delete_processed_agent_data(processed_agent_data_id: int):
     # Delete by id
     with SessionLocal() as session:
-        session.query(ProcessedAgentDataDbModel).delete(processed_agent_data_id)
+        deleted_entry = session.query(ProcessedAgentDataDbModel).get(processed_agent_data_id)
+        if deleted_entry is None:
+            return None
+
+        session.query(ProcessedAgentDataDbModel).filter(ProcessedAgentDataDbModel.id == processed_agent_data_id).delete()
         session.commit()
+
+        return ProcessedAgentDataInDB.model_validate(deleted_entry)
 
 
 if __name__ == "__main__":
