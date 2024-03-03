@@ -148,6 +148,7 @@ def convert_agent_data(raw_data: ProcessedAgentData):
 
 @app.post("/processed_agent_data/",)
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
+    print("Adding data")
     # Insert data to database
     # Send data to subscribers
     with SessionLocal() as session:
@@ -161,6 +162,9 @@ async def create_processed_agent_data(data: List[ProcessedAgentData]):
 
         for processed_subscriber in subscriptions:
             await send_data_to_subscribers(processed_subscriber, converted_data)
+
+        print("Success")
+
 
 @app.get(
     "/processed_agent_data/{processed_agent_data_id}",
