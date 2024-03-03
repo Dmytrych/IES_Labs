@@ -65,8 +65,9 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     try:
-        print("Hub received message via MQTT")
+        logging.info("Hub received message via MQTT")
         payload: str = msg.payload.decode("utf-8")
+        logging.info(f"Request payload: {payload}")
         # Create ProcessedAgentData instance with the received data
         processed_agent_data = ProcessedAgentData.model_validate_json(
             payload, strict=True
